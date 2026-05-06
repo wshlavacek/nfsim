@@ -6,9 +6,17 @@ stochastic simulator for rule-based models.
 ## Provenance
 
 - **Upstream**: https://github.com/RuleWorld/nfsim
-- **Forked from**: commit `abb1291` (master, 2026-02-16)
+- **Vendor source**: local NFsim branch `bngsim/vendor`
+- **Current source commit**: see `VENDOR.json`
+- **Current base commit**: RuleWorld `9a97437`
 - **License**: MIT (see `LICENSE.txt`)
 - **Copyright**: 2016 Michael Sneddon, James Faeder, Thierry Emonet
+
+Refresh this directory with:
+
+```sh
+python3 bngsim/scripts/vendor_nfsim.py --nfsim-repo /Users/wish/Code/nfsim --ref bngsim/vendor
+```
 
 ## Modifications from upstream
 
