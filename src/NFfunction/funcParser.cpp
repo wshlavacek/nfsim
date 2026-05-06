@@ -3,23 +3,14 @@
 #include <math.h>
 
 using namespace NFcore;
-using namespace mu;
 
 
-
-
-Parser * FuncFactory::create(string functionString, vector <string> & variableNames, vector <double *> & variablePtrs)
+mu::Parser * FuncFactory::create(string functionString, vector <string> & variableNames, vector <double *> & variablePtrs)
 {
-	double PI = 3.14159265358979323846;
-	double NA= 6.02214179e23;
-	double E = 6.02214179e23;
-
-	Parser *p = new Parser();
+	mu::Parser *p = new mu::Parser();
 	try
 	{
-		p->DefineConst("_PI",PI);
-		p->DefineConst("_e",E);
-		p->DefineConst("_Na",NA);
+		// Constants (_PI, _e, _Na, etc.) are registered by the Parser constructor.
 
 		if(variableNames.size()!=variablePtrs.size())  {
 			cout<<"Error parsing function in FuncFactory!!  Your variableNames vector and "<<endl;
@@ -35,7 +26,7 @@ Parser * FuncFactory::create(string functionString, vector <string> & variableNa
 
 		p->SetExpr(functionString);
 	}
-	catch (Parser::exception_type &e)
+	catch (mu::Parser::exception_type &e)
 	{
 		cout<<"Error parsing function in FuncFactory!!  This is what happened:"<<endl;
 		cout<< "  "<<e.GetMsg() << endl;
@@ -46,25 +37,11 @@ Parser * FuncFactory::create(string functionString, vector <string> & variableNa
 	return p;
 }
 
-Parser * FuncFactory::create()
+mu::Parser * FuncFactory::create()
 {
-	double PI = 3.14159265358979323846;
-	double NA= 6.02214179e23;
-	double E = 6.02214179e23;
-	Parser *p = new Parser();
-	try
-	{
-		p->DefineConst("_PI",PI);
-		p->DefineConst("_e",E);
-		p->DefineConst("_Na",NA);
-	}
-	catch (Parser::exception_type &e)
-	{
-		cout<<"Error creating function in FuncFactory!!  This is what happened:"<<endl;
-		cout<< "  "<<e.GetMsg() << endl;
-		cout<<"Quitting."<<endl;
-		exit(1);
-	}
+	// Constants (_PI, _e, _Na, etc.) and custom functions (ln, rint, sign, if)
+	// are all registered by the mu::Parser constructor (ExprTk-backed).
+	mu::Parser *p = new mu::Parser();
 	return p;
 }
 
@@ -82,7 +59,7 @@ double FuncFactory::Eval(mu::Parser *p)
 	}
 	try {
 		return p->Eval();
-	} catch (Parser::exception_type &e) {
+	} catch (mu::Parser::exception_type &e) {
 		cout<<"Error evaluating function in FuncFactory!!  "<<endl;
 		cout<<"The function was: "<<p->GetExpr()<<endl;
 		cout<<"And this is what went wrong:"<<endl;
@@ -97,18 +74,18 @@ double FuncFactory::Eval(mu::Parser *p)
 void FuncFactory::test()
 {
 	double PI = 3.14159265358979323846;
-	double NA= 6.02214179e23;
-	double E = 6.02214179e23;
+	double NA= 6.02214076e23;
+	double E = 2.71828182845904523536;
 	cout<<"Beginning diagnostic tests..."<<endl;
 
 	{
 	//Test 1: check constants are correct and basic math functions seem right
 	cout<<" 1) simple test of constants and predefined functions: ";
-	string functionString("sin(_e*cos(3.2/_PI))+ln(_Na*1.14e-11)");//sin(_e*cos(3.2/_PI)+0.11*(1-_Na*1.14)");
+	string functionString("sin(_e*cos(3.2/_PI))+ln(_Na*1.14e-11)");
 	vector <string> variableNames;
 	vector <double *> variablePtrs;
 
-	Parser *p = FuncFactory::create(functionString,variableNames,variablePtrs);
+	mu::Parser *p = FuncFactory::create(functionString,variableNames,variablePtrs);
 	double result = sin(E*cos(3.2/PI))+log(NA*1.14e-11);
 	double funcResult = p->Eval();
 	if(abs(funcResult - result)<0.0001)
@@ -137,7 +114,7 @@ void FuncFactory::test()
 	variablePtrs.push_back(&d1);
 	variablePtrs.push_back(&d2);
 
-	Parser *p = FuncFactory::create(functionString,variableNames,variablePtrs);
+	mu::Parser *p = FuncFactory::create(functionString,variableNames,variablePtrs);
 	double result = 1-(d1/d2)*sin(d1*d2)+1.3*pow(d1,2.0);
 	double funcResult = FuncFactory::Eval(p);
 	if(abs(funcResult - result)<0.0001)
@@ -163,4 +140,3 @@ void FuncFactory::test()
 	//Thats all the test I can think of!
 	cout<<endl<<"Testing complete."<<endl;
 }
-

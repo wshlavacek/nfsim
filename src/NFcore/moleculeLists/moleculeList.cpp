@@ -1,4 +1,5 @@
 #include "moleculeList.hh"
+#include <stdexcept>
 
 
 using namespace NFcore;
@@ -66,7 +67,8 @@ int MoleculeList::create(Molecule *&m)
 			cerr<<"  If you need \nto have more molecules, rerun with the -gml [int] flag \nto increase the limit.";
 			cerr<<"  For instance, to increase the limit \nto 1 million, write: -gml 1000000.\n\n";
 			cerr<<"Better luck next time!"<<endl;
-			exit(1);
+			throw std::runtime_error(
+			    "NFsim: global molecule limit exceeded for a MoleculeType. Increase gml.");
 		}
 
 		//Copy everything over to new arrays that are double the size

@@ -204,7 +204,7 @@ BasicRxnClass::BasicRxnClass(string name, double baseRate, string baseRateName, 
 	reactantLists = new ReactantList *[n_reactants];
 	//Set up the reactantLists
 	for(unsigned int r=0; r<n_reactants; r++)
-		reactantLists[r]=(new ReactantList(r,transformationSet,25));
+		reactantLists[r]=(new ReactantList(r,transformationSet,s,25));
 	
 	this->connectivityFlag = s->getConnectivityFlag();
 }
@@ -537,7 +537,6 @@ void BasicRxnClass::pickMappingSets(double random_A_number) const
 		}
 	}
 }
-
 
 
 

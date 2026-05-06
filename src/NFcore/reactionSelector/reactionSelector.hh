@@ -29,8 +29,11 @@ namespace NFcore
 		public:
 
 			//Initializations and basic functionality
-			ReactionSelector() {};
+			ReactionSelector() : sys_(nullptr) {};
 			virtual ~ReactionSelector() {};
+
+			void setSystem(System *s) { sys_ = s; }
+			System* getSystem() const { return sys_; }
 
 			virtual double refactorPropensities() = 0;
 
@@ -39,6 +42,8 @@ namespace NFcore
 			virtual double getNextReactionClass(ReactionClass *&rc) = 0;
 			virtual double getAtot() = 0;
 
+		protected:
+			System *sys_;
 	};
 
 

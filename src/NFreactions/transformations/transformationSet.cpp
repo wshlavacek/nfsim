@@ -120,6 +120,7 @@ TemplateMolecule * TransformationSet::getTemplateMolecule( unsigned int reactant
 	{
 		return addmol[reactantIndex-n_reactants];
 	}
+	return 0;
 }
 
 
@@ -924,13 +925,14 @@ bool TransformationSet::checkConnection(ReactionClass * rxn) {
 			// doesn't give any reaction connections, so skip that
 			if (transfn->getType()!=(int)TransformationFactory::REMOVE) {
 				c1 = transfn->getComponentIndex();
-				// If the moleculetype or component is not present in the other reaction,
-				// it is not connected
-				if (!rxn->areMoleculeTypeAndComponentPresent(mt1, c1)) continue;
-
-				// If the TemplateMolecule is 'incompatible' with any of the reactants
-				// or products, then the reaction is not connected
-				if (!rxn->isTemplateCompatible(t1)) continue;
+				bool isCompatible = rxn->isTemplateCompatible(t1);
+				if (!isCompatible) continue;
+				bool sharesChangedComponent = rxn->areMoleculeTypeAndComponentPresent(mt1, c1);
+				if (!sharesChangedComponent) {
+					// Full membership updates still remove/re-add compatible mappings even when
+					// the changed component is outside the target pattern, which affects
+					// ReactantList/ReactantTree ordering and same-seed selection.
+				}
 				// Both checks passed for one op so return true
 				return true;
 			} else {
@@ -949,13 +951,13 @@ bool TransformationSet::checkConnection(ReactionClass * rxn) {
 			if (!t1) continue;
 			mt1 = t1->getMoleculeType();
 			c1 = transfn->getComponentIndex();
-			// If the moleculetype or component is present in the other reaction,
-			// it is not connected
-			if (!rxn->areMoleculeTypeAndComponentPresent(mt1, c1)) continue;
-
-			// If the TemplateMolecule is 'incompatible' with any of the reactants
-			// or products, then the reaction is not connected
-			if (!rxn->isTemplateCompatible(t1)) continue;
+			bool isCompatible = rxn->isTemplateCompatible(t1);
+			if (!isCompatible) continue;
+			bool sharesChangedComponent = rxn->areMoleculeTypeAndComponentPresent(mt1, c1);
+			if (!sharesChangedComponent) {
+				// See note above: compatibility alone is enough to require a connected
+				// update if we want the fast path to preserve full-update container order.
+			}
 			// Both checks passed for one op so return true
 			return true;
 		}

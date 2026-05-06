@@ -57,7 +57,7 @@ double DirectSelector::update(ReactionClass *r,double oldA, double newA)
 
 double DirectSelector::getNextReactionClass(ReactionClass *&rc)
 {
-	double randNum = NFutil::RANDOM(Atot);
+	double randNum = sys_->getRNG().random(Atot);
 
 	double a_sum=0, last_a_sum=0;
 
@@ -87,4 +87,3 @@ double DirectSelector::getAtot()
 {
 	return Atot;
 }
-

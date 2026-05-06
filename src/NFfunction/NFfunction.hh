@@ -2,7 +2,7 @@
 #define NFFUNCTION_HH_
 
 
-#include "muParser/muParser.h"
+#include "nfsim_funcparser.h"
 #include "../NFcore/NFcore.hh"
 
 
@@ -45,8 +45,8 @@ namespace NFcore {
 			<tr><td>atanh</td><td>1</td><td>hyperbolic arcur tangens function</td></tr>
 			<tr><td>log2</td><td>1</td><td>logarithm to the base 2</td></tr>
 			<tr><td>log10</td><td>1</td><td>logarithm to the base 10</td></tr>
-			<tr><td>log</td><td>1</td><td>logarithm to the base 10</td></tr>
-			<tr><td>ln</td><td>1</td><td>logarithm to base e (2.71828...)</td></tr>
+			<tr><td>log</td><td>1</td><td>natural logarithm (base e) [ExprTk convention]</td></tr>
+			<tr><td>ln</td><td>1</td><td>natural logarithm (base e) [alias for log]</td></tr>
 			<tr><td>exp</td><td>1</td><td>e raised to the power of x</td></tr>
 			<tr><td>sqrt</td><td>1</td><td>square root of a value</td></tr>
 			<tr><td>sign</td><td>1</td><td>sign function -1 if x<0; 1 if x>0</td></tr>
@@ -183,9 +183,13 @@ namespace NFcore {
 			void fileUpdate();
 			double getCounterValue();
 			void loadParamFile(string filePath);
-			void enableFileDependency(string FilePath);
+			void enableFileDependency(string FilePath, string method="linear");
+			void enableInlineDependency(const vector<double> &xs, const vector<double> &ys, string method="linear");
+			void setInterpolationMethod(string method);
 			void setCtrName(string name);
 			void addCounterPointer(double *count);
+			void setCounterFromTime(System *s);
+			void setCounterFromParameter(System *s, string paramName);
 			// unhooking system timer option for now
 			// void addSystemPointer(System *s);
 			bool fileFunc;
@@ -213,8 +217,9 @@ namespace NFcore {
 			// AS-2021
 			string ctrType;
 			string ctrName;
-			// unhooking system timer option for now
-			// System *sysPtr;
+			System *sysPtr;
+			string counterParamName;
+			string interpolationMethod;
 			int currInd;
 			int dataLen;
 			double *counter;
@@ -401,9 +406,14 @@ namespace NFcore {
 				void fileUpdate();
 				double getCounterValue();
 				void loadParamFile(string filePath);
-				void enableFileDependency(string FilePath);
+				void enableFileDependency(string FilePath, string method="linear");
+				void enableInlineDependency(const vector<double> &xs, const vector<double> &ys, string method="linear");
+				void setInterpolationMethod(string method);
 				void setCtrName(string name);
+				void addCounterPointer(double *count);
 				void addFunctionPointer(GlobalFunction *f);
+				void setCounterFromTime(System *s);
+				void setCounterFromParameter(System *s, string paramName);
 				bool fileFunc;
 				// AS-2021
 
@@ -452,8 +462,9 @@ namespace NFcore {
 				// AS-2021
 				string ctrType;
 				string ctrName;
-				// unhooking system timer option for now
-				// System *sysPtr;
+				System *sysPtr;
+				string counterParamName;
+				string interpolationMethod;
 				GlobalFunction *funcPtr;
 				int currInd;
 				int dataLen;

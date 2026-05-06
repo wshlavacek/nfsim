@@ -157,7 +157,7 @@ DORRxnClass::DORRxnClass(
 	reactantLists = new ReactantList *[n_reactants];
 	for(unsigned int r=0; r<n_reactants; r++) {
 		if((signed)r!=this->DORreactantIndex)
-			reactantLists[r]=(new ReactantList(r,transformationSet,25));
+			reactantLists[r]=(new ReactantList(r,transformationSet,s,25));
 	}
 
 	//Initialize a to zero
@@ -623,7 +623,7 @@ void DORRxnClass::pickMappingSets(double randNumber) const
 		}
 	}
 
-	if(randNumber<0) randNumber = NFutil::RANDOM(this->a);
+	if(randNumber<0) randNumber = system->getRNG().random(this->a);
 	reactantTree->pickReactantFromValue(mappingSet[DORreactantIndex],randNumber,rateFactorMultiplier);
 
 	//cout<<"tree size:        "<<reactantTree->size()<<endl;
@@ -900,7 +900,7 @@ DOR2RxnClass::DOR2RxnClass(
 	reactantLists = new ReactantList *[n_reactants];
 	for (unsigned int r=0; r<n_reactants; r++) {
 		if( (signed)r!=this->DORreactantIndex1  &&  (signed)r!=this->DORreactantIndex2 )
-			reactantLists[r]=(new ReactantList(r,transformationSet,25));
+			reactantLists[r]=(new ReactantList(r,transformationSet,s,25));
 	}
 
 	//Initialize a to zero
@@ -1249,10 +1249,10 @@ void DOR2RxnClass::pickMappingSets(double randNumber) const
 		}
 	}
 
-	double randNumber1 = NFutil::RANDOM( reactantTree1->getRateFactorSum() );
+	double randNumber1 = system->getRNG().random( reactantTree1->getRateFactorSum() );
 	reactantTree1->pickReactantFromValue( mappingSet[DORreactantIndex1], randNumber1, 1.0);
 
-	double randNumber2 = NFutil::RANDOM( reactantTree2->getRateFactorSum() );
+	double randNumber2 = system->getRNG().random( reactantTree2->getRateFactorSum() );
 	reactantTree2->pickReactantFromValue( mappingSet[DORreactantIndex2], randNumber2, 1.0);
 
 }
@@ -1301,8 +1301,4 @@ void DOR2RxnClass::printDetails() const
 	if (n_reactants==0)
 		cout << "      >No Reactants: so this rule either creates new species or does nothing."<<endl;
 }
-
-
-
-
 

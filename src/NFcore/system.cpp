@@ -513,7 +513,7 @@ MoleculeType * System::getMoleculeTypeByName(string mName)
 Molecule * System::getMoleculeByUid(int uid)
 {
 	// AS2023 - we normally want warnings to be on
-	this->getMoleculeByUid(uid, true);
+	return this->getMoleculeByUid(uid, true);
 }
 // AS2023 - alternative call sig to turn off warnings if we want to
 Molecule * System::getMoleculeByUid(int uid, bool warn)
@@ -583,6 +583,7 @@ int System::getMolObsCount(int moleculeTypeIndex, int observableIndex) const
 void System::prepareForSimulation()
 {
 	this->selector = new DirectSelector(allReactions);
+	this->selector->setSystem(this);
 
 	cout<<"preparing simulation..."<<endl;
 	//Note!!  : the order of preparing the system matters!  You have to prepare
@@ -871,6 +872,12 @@ double System::getNextRxn()
 		this->printAllReactions();
 		exit(1);
 	}
+	if (getNFsimV1143Compatibility()) {
+		// Upstream NFsim v1.14.3 consumes and discards the first selector draw
+		// here, then uses the second draw/residual. This is kept only as an
+		// explicit compatibility mode for same-seed parity with that CLI.
+		return selector->getNextReactionClass(nextReaction);
+	}
 	return x;
 
 
@@ -954,7 +961,7 @@ double System::sim(double duration, long int sampleTimes, bool verbose)
 		//   dt = -ln(rand) / a_tot;
 		//Choose a random number on the OPEN interval (0,1) so that we never
 		//have a dt=0 or a dt=infinity
-		if(a_tot>ATOT_TOLERANCE) delta_t = -log(NFutil::RANDOM_OPEN()) / a_tot;
+		if(a_tot>ATOT_TOLERANCE) delta_t = -log(rng_.random_open()) / a_tot;
 		else { delta_t=0; current_time=end_time; }
 		if(DEBUG) cout<<"   Determine dt : " << delta_t << endl;
 
@@ -1102,23 +1109,24 @@ double System::sim(double duration, long int sampleTimes, bool verbose)
 
 double System::stepTo(double stoppingTime)
 {
-	double delta_t = 0;
-
 	while(current_time < stoppingTime)
 	{
-		// Select next reaction time
-		if(a_tot > ATOT_TOLERANCE) {
-			delta_t = -log(NFutil::RANDOM_CLOSED()) / a_tot;
-		} else {
-			// Otherwise, we can't react for the rest of this step
-			delta_t = 0;
-			current_time = stoppingTime;
-			cout << "Total propensity is zero, no further rxns can fire in this step." << endl;
-			break;
+		if(!pendingStepEventValid) {
+			// Preserve the waiting-time draw across output boundaries so
+			// repeated stepTo() calls consume the same RNG stream as sim().
+			if(a_tot > ATOT_TOLERANCE) {
+				pendingStepEventTime =
+					current_time + (-log(rng_.random_open()) / a_tot);
+				pendingStepEventValid = true;
+			} else {
+				current_time = stoppingTime;
+				cout << "Total propensity is zero, no further rxns can fire in this step." << endl;
+				break;
+			}
 		}
 
 		// Check if we've reached stopping time
-		if((current_time + delta_t) >= stoppingTime) {
+		if(pendingStepEventTime >= stoppingTime) {
 			break;
 		}
 
@@ -1126,9 +1134,10 @@ double System::stepTo(double stoppingTime)
 		double randElement = getNextRxn();
 		if(nextReaction == NULL) break;
 
-		current_time += delta_t;
+		current_time = pendingStepEventTime;
 		globalEventCounter++;
 		nextReaction->fire(randElement);
+		pendingStepEventValid = false;
 	}
 
 	return current_time;
@@ -1142,7 +1151,7 @@ void System::singleStep()
 
 	recompute_A_tot();
 	cout<<"  -total propensity (a_total) calculated as: "<<a_tot<<endl;
-	if(a_tot>ATOT_TOLERANCE) delta_t = -log(NFutil::RANDOM_CLOSED()) / a_tot;
+	if(a_tot>ATOT_TOLERANCE) delta_t = -log(rng_.random_closed()) / a_tot;
 	else
 	{
 		//Otherwise, we can't react for the rest of this step
@@ -2026,4 +2035,3 @@ NFstream& System::getOutputFileStream()
 
 //     return nfstream;
 // }
-

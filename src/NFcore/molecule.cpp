@@ -166,7 +166,7 @@ void Molecule::updateRxnMembership(ReactionClass * r, bool useConnectivity)
 		parentMoleculeType->updateConnectedRxnMembership(this, r);
 	}
 	else {
-		parentMoleculeType->updateRxnMembership(this);
+		parentMoleculeType->updateRxnMembership(this, r);
 	}
 }
 
@@ -834,7 +834,6 @@ void Molecule::printMoleculeList(list <Molecule *> &members)
 		cout<<"_u"<<(*molIter)->getUniqueID()<<endl;
 	}
 }
-
 
 
 

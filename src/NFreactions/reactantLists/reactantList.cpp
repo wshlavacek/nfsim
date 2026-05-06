@@ -3,13 +3,14 @@
 
 using namespace NFcore;
 
-ReactantList::ReactantList(unsigned int reactantIndex, TransformationSet *ts, unsigned int init_capacity=50)
+ReactantList::ReactantList(unsigned int reactantIndex, TransformationSet *ts, System *sys, unsigned int init_capacity=50)
 {
 
 	this->n_mappingSets = 0;
 	this->capacity = init_capacity;
 	this->reactantIndex = reactantIndex;
 	this->ts=ts;
+	this->sys = sys;
 	this->mappingSets = new MappingSet *[init_capacity];
 	this->msPositionMap = new unsigned int [init_capacity];
 	for(int i=0; i<this->capacity; i++)
@@ -35,7 +36,7 @@ ReactantList::~ReactantList()
 
 void ReactantList::pickRandom(MappingSet *&ms)
 {
-	unsigned int rand = NFutil::RANDOM_INT(0,n_mappingSets);
+	unsigned int rand = sys->getRNG().random_int(0, n_mappingSets);
 	ms = mappingSets[rand];
 }
 

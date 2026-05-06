@@ -6,12 +6,66 @@
  */
 
 #include "NFfunction.hh"
+#include <algorithm>
+#include <cctype>
+#include <cmath>
+#include <fstream>
+#include <sstream>
+#include <stdexcept>
 
 
 
 using namespace std;
 using namespace NFcore;
-using namespace mu;
+
+namespace {
+
+string tfun_to_lower(string s) {
+	std::transform(s.begin(), s.end(), s.begin(),
+		[](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+	return s;
+}
+
+void tfun_trim_in_place(string &s) {
+	while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) {
+		s.erase(s.begin());
+	}
+	while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) {
+		s.pop_back();
+	}
+}
+
+double tfun_interpolate_value(
+	const vector<double> &xs,
+	const vector<double> &ys,
+	const string &method,
+	double x)
+{
+	if (xs.size() < 2 || ys.size() != xs.size()) {
+		throw std::runtime_error("TFUN interpolation requires at least 2 rows with matching x/y lengths.");
+	}
+
+	if (x <= xs.front()) return ys.front();
+	if (x >= xs.back()) return ys.back();
+
+	auto it = std::upper_bound(xs.begin(), xs.end(), x);
+	int i = static_cast<int>(it - xs.begin()) - 1;
+	if (i < 0) i = 0;
+	if (i >= static_cast<int>(xs.size()) - 1) i = static_cast<int>(xs.size()) - 2;
+
+	if (method == "step") {
+		return ys[static_cast<size_t>(i)];
+	}
+
+	double x0 = xs[static_cast<size_t>(i)];
+	double x1 = xs[static_cast<size_t>(i + 1)];
+	double y0 = ys[static_cast<size_t>(i)];
+	double y1 = ys[static_cast<size_t>(i + 1)];
+	double frac = (x - x0) / (x1 - x0);
+	return y0 + frac * (y1 - y0);
+}
+
+}  // namespace
 
 
 CompositeFunction::CompositeFunction(System *s,
@@ -51,6 +105,12 @@ CompositeFunction::CompositeFunction(System *s,
 
 	// AS-2021
 	this->fileFunc = false;
+	this->sysPtr = NULL;
+	this->counter = NULL;
+	this->funcPtr = NULL;
+	this->currInd = 0;
+	this->dataLen = 0;
+	this->interpolationMethod = "linear";
 	// AS-2021
 }
 CompositeFunction::~CompositeFunction()
@@ -92,7 +152,7 @@ void CompositeFunction::setGlobalObservableDependency(ReactionClass *r, System *
 				cerr<<"When creating a FunctionalRxnClass of name: "+r->getName()+" you provided a function that\n";
 				cerr<<"depends on an observable type that I can't yet handle! (which is "+gf->getVarRefType(vr)+"\n";
 				cerr<<"try using type: 'MoleculeObservable' for now.\n";
-				cerr<<"quiting..."<<endl; exit(1);
+				cerr<<"quiting..."<<endl; throw std::runtime_error("try using type: 'MoleculeObservable' for now.\n");
 			}
 		}
 	}
@@ -259,7 +319,7 @@ void CompositeFunction::finalizeInitialization(System *s)
 		} catch (std::runtime_error e) {
 			cerr<<"When referencing a reactant, you must include the reactant number"<<endl;
 			cerr<<e.what()<<endl;
-			exit(1);
+   throw std::runtime_error("When referencing a reactant, you must include the reactant number");
 		}
 
 		bool isTwoDigitNumber = true;
@@ -276,7 +336,7 @@ void CompositeFunction::finalizeInitialization(System *s)
 
 		if(isTwoDigitNumber) {
 			cerr<<"When referencing a reactant, you can only reference reactant numbers up to 9."<<endl;
-			exit(1);
+   throw std::runtime_error("When referencing a reactant, you can only reference reactant numbers up to 9");
 		}
 
 		if(iOneDigit>maxReactantIndex) maxReactantIndex = iOneDigit;
@@ -336,6 +396,11 @@ void CompositeFunction::prepareForSimulation(System *s)
 			p->DefineVar(reactantStr,&reactantCount[r]);
 		}
 
+		// TFUN placeholder must exist at compile time; fileUpdate() overwrites it.
+		if (this->fileFunc && !this->ctrName.empty()) {
+			p->DefineConst(this->ctrName, 0.0);
+		}
+
 		p->SetExpr(this->parsedExpression);
 	}
 	catch (mu::Parser::exception_type &e)
@@ -343,7 +408,7 @@ void CompositeFunction::prepareForSimulation(System *s)
 		cout<<"Error preparing function "<<name<<" in class CompositeFunction!!  This is what happened:"<<endl;
 		cout<< "  "<<e.GetMsg() << endl;
 		cout<<"Quitting."<<endl;
-		exit(1);
+  throw std::runtime_error("Quitting");
 	}
 
 
@@ -477,7 +542,7 @@ double CompositeFunction::evaluateOn(Molecule **molList, int *scope, int *curRea
 			cout<<"Error evaluating composite function: "<<name<<endl;
 			cout<<"This function depends on local functions, but you gave no molecules"<<endl;
 			cout<<"or scope when calling this function.  Time to quit."<<endl;
-			exit(1);
+   throw std::runtime_error("or scope when calling this function.  Time to quit");
 		}
 
 	}
@@ -505,61 +570,110 @@ double CompositeFunction::evaluateOn(Molecule **molList, int *scope, int *curRea
 // AS-2021
 void CompositeFunction::loadParamFile(string filePath) 
 {
-	// setup our vectors
-	vector <double> time;
-	vector <double> values;
-	// open file for reading
+	vector<double> xs;
+	vector<double> ys;
 	ifstream file(filePath.c_str());
-	// Report if file doesn't exist
-	if(!file.good()){
+	if (!file.good()) {
 		cout<<"Error preparing function "<<this->name<<" in class GlobalFunction!!"<<endl;
 		cout<<"File doesn't look like it exists"<<endl;
 		cout<<"Quitting."<<endl;
-		exit(1);
+		throw std::runtime_error("Quitting");
 	}
-	// TODO: Err out this doesn't work
+
 	try {
-		// strings for looping over the file
-		string line, word, content;
-		string a,b;
-		// TODO: Err out if the format is wrong
-		while (file >> a >> b) {
-			// convert a to double
-			istringstream aos(a);
-			double d;
-			aos >> d;
-			// add it to time
-			time.push_back(d);
-			// convert b to double
-			istringstream bos(b);
-			bos >> d;
-			// add it to values
-			values.push_back(d);
+		string line;
+		while (std::getline(file, line)) {
+			size_t comment = line.find('#');
+			if (comment != string::npos) line = line.substr(0, comment);
+			tfun_trim_in_place(line);
+			if (line.empty()) continue;
+
+			for (char &c : line) {
+				if (c == ',') c = ' ';
+			}
+
+			std::istringstream iss(line);
+			double x = 0.0;
+			double y = 0.0;
+			if (!(iss >> x >> y)) {
+				cout<<"Error preparing function "<<this->name<<" in class GlobalFunction!!"<<endl;
+				cout<<"Failed to parse TFUN data line: '"<<line<<"'"<<endl;
+				cout<<"Quitting."<<endl;
+				throw std::runtime_error("Quitting");
+			}
+			string trailing;
+			if (iss >> trailing) {
+				cout<<"Error preparing function "<<this->name<<" in class GlobalFunction!!"<<endl;
+				cout<<"Unexpected trailing token in TFUN line: '"<<line<<"'"<<endl;
+				cout<<"Quitting."<<endl;
+				throw std::runtime_error("Quitting");
+			}
+			xs.push_back(x);
+			ys.push_back(y);
 		}
-		// put the vectors into data vector
-		this->data.push_back(time);
-		this->data.push_back(values);
-	} catch (exception const & e) {
+	} catch (exception const &e) {
 		cout<<"Error preparing function "<<this->name<<" in class GlobalFunction!!"<<endl;
 		cout<<"Failed to either open or read the file."<<endl;
 		cout<<"Quitting."<<endl;
-		exit(1);
-	};
-	return;
+		throw std::runtime_error("Quitting");
+	}
+
+	if (xs.size() < 2 || ys.size() != xs.size()) {
+		cout<<"Error preparing function "<<this->name<<" in class GlobalFunction!!"<<endl;
+		cout<<"TFUN file must contain at least two data rows with equal x/y lengths."<<endl;
+		cout<<"Quitting."<<endl;
+		throw std::runtime_error("Quitting");
+	}
+	for (size_t i = 1; i < xs.size(); ++i) {
+		if (xs[i] <= xs[i - 1]) {
+			cout<<"Error preparing function "<<this->name<<" in class GlobalFunction!!"<<endl;
+			cout<<"TFUN xData must be strictly increasing."<<endl;
+			cout<<"Quitting."<<endl;
+			throw std::runtime_error("Quitting");
+		}
+	}
+
+	this->data.clear();
+	this->data.push_back(xs);
+	this->data.push_back(ys);
 };
 
 void CompositeFunction::addFunctionPointer(GlobalFunction *fPtr) {
 	this->ctrType = "Function";
-	// this->setCtrName(fPtr->getName());
-	this->setCtrName("__TFUN__VAL__");
+	this->setCtrName("__TFUN_VAL__");
 	this->funcPtr = fPtr;
+}
+
+void CompositeFunction::addCounterPointer(double *count) {
+	this->ctrType = "Observable";
+	this->counter = count;
+}
+
+void CompositeFunction::setCounterFromTime(System *s) {
+	this->ctrType = "Time";
+	this->sysPtr = s;
+}
+
+void CompositeFunction::setCounterFromParameter(System *s, string paramName) {
+	this->ctrType = "Parameter";
+	this->sysPtr = s;
+	this->counterParamName = paramName;
 }
 
 void CompositeFunction::setCtrName(string name) {
 	this->ctrName = name;
 }
 
-void CompositeFunction::enableFileDependency(string filePath) {
+void CompositeFunction::setInterpolationMethod(string method) {
+	string normalized = tfun_to_lower(method);
+	if (normalized.empty()) normalized = "linear";
+	if (normalized != "linear" && normalized != "step") {
+		throw std::runtime_error("Unsupported TFUN interpolation method.");
+	}
+	this->interpolationMethod = normalized;
+}
+
+void CompositeFunction::enableFileDependency(string filePath, string method) {
 	// load file
 	// cout<<"file dependency of function: "<<name<<endl;
 	// cout<<"file: "<<filePath<<endl;
@@ -569,93 +683,74 @@ void CompositeFunction::enableFileDependency(string filePath) {
 	} catch (exception const & e) {
 		cout<<"Error preparing function "<<name<<" in class GlobalFunction!!"<<endl;
 		cout<<"Quitting."<<endl;
-		exit(1);
+  throw std::runtime_error("Quitting");
 	};
 	// we just want to keep a record of this
 	this->filePath = filePath;
 	// this sets it up so that this function knows it's supposed
 	// to be pulling values from a file
 	this->fileFunc = true;
+	this->setInterpolationMethod(method);
 	// initialize internal index
 	this->currInd = 0;
 	// pull data lenght so we can reuse it
-	this->dataLen = data[0].size();
+	this->dataLen = static_cast<int>(data[0].size());
+}
+
+void CompositeFunction::enableInlineDependency(
+	const vector<double> &xs,
+	const vector<double> &ys,
+	string method)
+{
+	if (xs.size() < 2 || ys.size() != xs.size()) {
+		throw std::runtime_error("Inline TFUN data must have equal x/y lengths with at least 2 rows.");
+	}
+	for (size_t i = 1; i < xs.size(); ++i) {
+		if (xs[i] <= xs[i - 1]) {
+			throw std::runtime_error("Inline TFUN xData must be strictly increasing.");
+		}
+	}
+	this->data.clear();
+	this->data.push_back(xs);
+	this->data.push_back(ys);
+	this->filePath = "<inline>";
+	this->fileFunc = true;
+	this->setInterpolationMethod(method);
+	this->currInd = 0;
+	this->dataLen = static_cast<int>(xs.size());
 }
 
 double CompositeFunction::getCounterValue() {
-	// depending on the type of the observable counter
-	// get the actual value
-	double ctrVal;
+	double ctrVal = 0.0;
 	if (ctrType == "Function") {
+		if (funcPtr == NULL) {
+			throw std::runtime_error("CompositeFunction TFUN function counter pointer is null.");
+		}
 		ctrVal = FuncFactory::Eval(this->funcPtr->p);
+	} else if (ctrType == "Observable") {
+		if (counter == NULL) {
+			throw std::runtime_error("CompositeFunction TFUN observable counter pointer is null.");
+		}
+		ctrVal = (*counter);
+	} else if (ctrType == "Time") {
+		if (sysPtr == NULL) {
+			throw std::runtime_error("CompositeFunction TFUN time counter system pointer is null.");
+		}
+		ctrVal = this->sysPtr->getCurrentTime();
+	} else if (ctrType == "Parameter") {
+		if (sysPtr == NULL || counterParamName.empty()) {
+			throw std::runtime_error("CompositeFunction TFUN parameter counter is not configured.");
+		}
+		ctrVal = this->sysPtr->getParameter(counterParamName);
+	} else {
+		throw std::runtime_error("CompositeFunction TFUN counter type is not configured.");
 	}
-	// unhooking system timer option for now
-	// else {
-	// 	// not sure but this is likely slower
-	// 	ctrVal = this->sysPtr->getCurrentTime();
-	// }
 	return ctrVal;
 }
 void CompositeFunction::fileUpdate() {
-	// TODO: Error checking and reporting
-	
-	// get counter val
 	double ctrVal = this->getCounterValue();
-
-	// basic step function implementation
-	// if we got past the last point, keep returning
-	// the last point
-	if (currInd>dataLen-1) {
-		currInd = dataLen-1;
-		p->DefineConst(ctrName,data[1][currInd]);
-		return;
-	} else if (currInd==dataLen-1) {
-		p->DefineConst(ctrName,data[1][currInd]);
-		return;
-	}
-	// a simple way to do interval locating 
-	if (data[0][currInd] < data[0][currInd+1]) {
-		// next point is higher than the current point, we
-		// are waiting for the counter value to be higher 
-		// than our current point
-		
-		// return 0 if we don't have data yet
-		if(data[0][0]>=ctrVal) {
-			// we haven't gotten to the point where
-			// we can get a value out, return 0
-			// cout<<"not there yet, returning 0"<<endl;
-			p->DefineConst(ctrName,0);
-			return;
-		} 
-		// go up by one if the counter value got past 
-		// the next value in the array
-		if (ctrVal>=data[0][currInd+1]) {
-			currInd += 1;
-		}
-	// note that this makes no sense if they are equal
-	// TODO: Raise error if they are equal. Better yet, parse 
-	// it ahead of time and make sure that doesn't happen
-	} else {
-		// next point is lower than the current point, we
-		// are waiting for the counter value to be lower 
-		// than our current point
-
-		// return 0 if we don't have data yet
-		if(data[0][0]<=ctrVal) {
-			// we haven't gotten to the point where
-			// we can get a value out, return 0
-			// cout<<"not there yet, returning 0"<<endl;
-			p->DefineConst(ctrName,0);
-			return;
-		}
-		// go up by one if the counter value got past 
-		// the next value in the array
-		if (ctrVal<=data[0][currInd+1]) {
-			currInd += 1;
-		}
-	}
-	// // return value from the value array
-	p->DefineConst(ctrName,data[1][currInd]);
+	double y = tfun_interpolate_value(data[0], data[1], interpolationMethod, ctrVal);
+	p->DefineConst(ctrName,y);
 	return;
 }
 // AS-2021

@@ -19,6 +19,7 @@
 // Include various NFsim classes from other files
 #include "../NFscheduler/NFstream.h"
 #include "../NFutil/NFutil.hh"
+#include "../NFutil/nfsim_rng.h"
 #include "../NFreactions/NFreactions.hh"
 #include "moleculeLists/moleculeList.hh"
 #include "../NFfunction/NFfunction.hh"
@@ -246,6 +247,8 @@ namespace NFcore
 
 			int getMolObsCount(int moleculeTypeIndex, int observableIndex) const;
 			Observable * getObservableByName(string obsName);
+			int getNumOfObsForOutput() const { return static_cast<int>(obsToOutput.size()); }
+			Observable * getObsForOutput(int index) const { return obsToOutput.at(index); }
 			double getAverageGroupValue(string groupName, int valIndex);
 			
 			/* Compartment management for cBNGL */
@@ -395,6 +398,10 @@ namespace NFcore
 			 * will not output anything to file (so must be done manually) and returns the current time
 			 * of the simulation, which will always be less than the stopping time */
 			double stepTo(double stoppingTime);
+			void invalidateStepToCache() {
+				pendingStepEventValid = false;
+				pendingStepEventTime = 0.0;
+			}
 
 			void singleStep();
 
@@ -472,8 +479,14 @@ namespace NFcore
 			 */
 			void useConnectivityFlag(bool connectivityFlag) {this->connectivityFlag = connectivityFlag;};
 			bool getConnectivityFlag() {return connectivityFlag;};
+			void setNFsimV1143Compatibility(bool value) { this->nfsimV1143Compatibility = value; }
+			bool getNFsimV1143Compatibility() const { return nfsimV1143Compatibility; }
 
 			void setMaxCpuTime(double time) { max_cpu_time = time; };
+
+			// Per-System RNG for thread-safe deterministic simulation.
+			NfsimRNG& getRNG() { return rng_; }
+			void seedRNG(unsigned long seed) { rng_.seed(seed); }
 
 			clock_t start,finish;
 			double current_cpu_time = 0;
@@ -522,6 +535,7 @@ namespace NFcore
 		    bool outputEventCounter; /*< set to true to output the cumulative number of events at each output step */
 		    bool anyRxnTagged; /*< sets whether any reaction is tagged for output when it fires */
 		    bool connectivityFlag; /* Whether to infer and use reaction connectivity  for updating molecule rxn membership*/
+		    bool nfsimV1143Compatibility = false; /* Preserve NFsim v1.14.3 selector double-draw behavior */
 		    bool trackConnected; /* Whether to track connected reactions after each reaction firing. Useful for debugging */
 		    bool printConnected; /* Whether to print connected reactions at the beginning of the simulation. Useful for debugging */
 			bool outputMoleculeTypesFile; /* Output molecule types (default: false) */
@@ -574,6 +588,8 @@ namespace NFcore
 			double a_tot;        /*< the sum of all a's (propensities) of all reactions */
 			double current_time; /*< keeps track of the simulation time */
 			ReactionClass * nextReaction;  /*< keeps track of the next reaction to fire */
+			bool pendingStepEventValid = false; /*< cached stepTo waiting-time draw */
+			double pendingStepEventTime = 0.0; /*< absolute event time for cached stepTo draw */
 			// max CPU time for simulation
 			double max_cpu_time;
 
@@ -614,6 +630,9 @@ namespace NFcore
 
 			//Data structure that performs the selection of the next reaction class
 			ReactionSelector * selector;
+
+			// Per-System RNG instance
+			NfsimRNG rng_;
 
 			// To look up connected reactions quickly
 			vector <vector <bool> > connectedReactions;
@@ -796,7 +815,7 @@ namespace NFcore
 
 
 			/* updates a molecules membership (assumes molecule is of type this) */
-			void updateRxnMembership(Molecule * m);
+			void updateRxnMembership(Molecule * m, ReactionClass * firedReaction=0);
 			/* Updates only molecule membership in connected reactions.
 			 * The connected reactions are inferred at the simulation start.
 			 * Arvind Rasi Subramaniam
