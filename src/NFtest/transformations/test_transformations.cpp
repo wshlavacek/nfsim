@@ -305,6 +305,35 @@ void NFtest_transformations::run()
 		throw runtime_error("canReachExcludingBonds: excluding both bonds of a two-bond ring should separate the pair");
 	}
 
+	// A chain of 40, s2 of each bound to s1 of the next. The search runs from
+	// both ends in turn with a growing budget, starting at 8 molecules, so these
+	// cases go past the first budgets on both sides.
+	const int chainLength = 40;
+	vector<Molecule *> chain;
+	for (int i = 0; i < chainLength; ++i) {
+		chain.push_back(molRing->genDefaultMolecule());
+		if (i > 0) Molecule::bind(chain[i-1], 1, chain[i], 0);
+	}
+
+	// The first molecule comes off alone: apart, whichever end is asked first.
+	if (testTS->testCanReach(chain[0], chain[1], 1) != false ||
+			testTS->testCanReach(chain[1], chain[0], 0) != false) {
+		throw runtime_error("canReachExcludingBonds: a molecule freed from the end of a long chain should be apart from it");
+	}
+
+	// The middle bond: two halves of 20, apart.
+	if (testTS->testCanReach(chain[19], chain[20], 1) != false) {
+		throw runtime_error("canReachExcludingBonds: the two halves of a cut chain should be apart");
+	}
+
+	// Close the chain into a ring of 40. Without one ring bond its two molecules
+	// are still connected the long way round, 39 bonds away.
+	Molecule::bind(chain[chainLength-1], 1, chain[0], 0);
+	if (testTS->testCanReach(chain[0], chain[1], 1) != true ||
+			testTS->testCanReach(chain[1], chain[0], 0) != true) {
+		throw runtime_error("canReachExcludingBonds: the ends of one ring bond should stay connected the long way round");
+	}
+
 	delete testTS;
 	delete tm1;
 

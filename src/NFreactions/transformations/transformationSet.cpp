@@ -590,96 +590,98 @@ bool TransformationSet::addAddMolecule( MoleculeCreator *mc )
 
 
 
+// The molecules next to `current` once a firing is done: those it is bonded
+// to, less the half-edges in excludedBonds, and those addedBonds joins it to.
+static void neighborsAfterFiring(Molecule *current,
+		const std::vector< std::pair<Molecule *, int> > &excludedBonds,
+		const std::vector< std::pair<Molecule *, Molecule *> > *addedBonds,
+		std::vector<Molecule *> &out)
+{
+	out.clear();
+	int numComponents = current->getMoleculeType()->getNumOfComponents();
+	for (int c = 0; c < numComponents; ++c) {
+		if (!current->isBindingSiteBonded(c)) continue;
+		// Skip any half-edge belonging to a bond the rule will delete.
+		bool isExcluded = false;
+		for (unsigned int e = 0; e < excludedBonds.size(); ++e) {
+			if (excludedBonds[e].first == current && excludedBonds[e].second == c) {
+				isExcluded = true;
+				break;
+			}
+		}
+		if (!isExcluded) out.push_back(current->getBondedMolecule(c));
+	}
+	// Also cross any bond the rule is about to add at this molecule.
+	if (addedBonds != 0) {
+		for (unsigned int a = 0; a < addedBonds->size(); ++a) {
+			if ((*addedBonds)[a].first == current) out.push_back((*addedBonds)[a].second);
+			else if ((*addedBonds)[a].second == current) out.push_back((*addedBonds)[a].first);
+		}
+	}
+}
+
+
+// Breadth-first search from `from` for `target` on the graph a firing leaves,
+// discovering at most `budget` molecules. Returns 1 if it reaches the target, 0
+// if it runs out of molecules first (the two are apart), and -1 if it reaches
+// the budget. The buffers are reused, so a search allocates nothing once they
+// have grown.
+static int boundedSearchAfterFiring(Molecule *from, Molecule *target, size_t budget,
+		const std::vector< std::pair<Molecule *, int> > &excludedBonds,
+		const std::vector< std::pair<Molecule *, Molecule *> > *addedBonds)
+{
+	static std::vector<Molecule *> visited, neighbors;
+	visited.clear();
+	visited.push_back(from);
+	from->setVisitedMolecule(true);
+
+	int result = 0;
+	for (size_t head = 0; head < visited.size() && result == 0; ++head) {
+		if (visited.size() > budget) { result = -1; break; }
+		neighborsAfterFiring(visited[head], excludedBonds, addedBonds, neighbors);
+		for (unsigned int n = 0; n < neighbors.size(); ++n) {
+			if (neighbors[n] == target) { result = 1; break; }
+			if (!neighbors[n]->getVisitedMolecule()) {
+				neighbors[n]->setVisitedMolecule(true);
+				visited.push_back(neighbors[n]);
+			}
+		}
+	}
+
+	// Clear the hasVisitedMolecule values before returning
+	for (size_t v = 0; v < visited.size(); ++v)
+		visited[v]->setVisitedMolecule(false);
+	return result;
+}
+
+
 bool TransformationSet::canReachExcludingBonds(Molecule *mol1, Molecule *mol2,
 		const std::vector< std::pair<Molecule *, int> > &excludedBonds,
 		const std::vector< std::pair<Molecule *, Molecule *> > *addedBonds)
 {
-	// Perform a BFS from mol2 to see if mol1 is reachable while refusing to
-	// traverse any of the bonds in excludedBonds. Each excluded bond is recorded
-	// as both of its (molecule, component-index) half-edges, so the bond is
-	// skipped regardless of which endpoint the BFS reaches first.
-	// Returns true if mol1 can still be reached, false otherwise.
+	// Is mol1 reachable from mol2 while refusing to traverse any of the bonds in
+	// excludedBonds, and crossing those in addedBonds? Each excluded bond is
+	// recorded as both of its (molecule, component-index) half-edges, so the bond
+	// is skipped regardless of which endpoint a search reaches first.
 	//
 	// Excluding the full set of bonds that the firing rule deletes (rather than
 	// one bond at a time) is what lets a multi-bond ring-opening dissociation be
 	// recognized as genuinely separating its products: each individual bond may
 	// leave the partners connected, while removing all of them does not.
-
-	// Use a static queue for efficiency (reusing the BFS infrastructure)
-	static queue <Molecule *> q;
-	static list <Molecule *> visited;
-
-	// Clear queues and visited list
-	while(!q.empty()) q.pop();
-	visited.clear();
-	// Start BFS from mol2
-	q.push(mol2);
-	visited.push_back(mol2);
-	mol2->setVisitedMolecule(true);
-
-	bool found = false;
-
-	while(!q.empty()) {
-		Molecule *current = q.front();
-		q.pop();
-
-		// Check if we reached mol1
-		if (current == mol1) {
-			found = true;
-			break;
-		}
-
-		// Explore neighbors through bonds
-		int numComponents = current->getMoleculeType()->getNumOfComponents();
-		for (int c = 0; c < numComponents; ++c) {
-			// Skip any half-edge belonging to a bond the rule will delete.
-			bool isExcluded = false;
-			for (unsigned int e = 0; e < excludedBonds.size(); ++e) {
-				if (excludedBonds[e].first == current && excludedBonds[e].second == c) {
-					isExcluded = true;
-					break;
-				}
-			}
-			if (isExcluded) {
-				continue;
-			}
-
-			// Check if this component is bonded
-			if (current->isBindingSiteBonded(c)) {
-				Molecule *neighbor = current->getBondedMolecule(c);
-
-				// Check if we've already visited this neighbor
-				if (!neighbor->getVisitedMolecule()) {
-					// Haven't visited this neighbor yet
-					neighbor->setVisitedMolecule(true);
-					visited.push_back(neighbor);
-					q.push(neighbor);
-				}
-			}
-		}
-
-		// Also cross any bond the rule is about to add at this molecule.
-		if (addedBonds != 0) {
-			for (unsigned int a = 0; a < addedBonds->size(); ++a) {
-				Molecule *neighbor = 0;
-				if ((*addedBonds)[a].first == current) neighbor = (*addedBonds)[a].second;
-				else if ((*addedBonds)[a].second == current) neighbor = (*addedBonds)[a].first;
-				if (neighbor != 0 && !neighbor->getVisitedMolecule()) {
-					neighbor->setVisitedMolecule(true);
-					visited.push_back(neighbor);
-					q.push(neighbor);
-				}
-			}
-		}
+	//
+	// The searches run from each end in turn, each allowed four times the
+	// molecules of the last. When the two are apart, the search on the smaller
+	// side runs out first, so a bond that frees a small piece from a large
+	// aggregate costs the size of the piece. A search from one end only walked
+	// the whole aggregate whenever it started on that side. The restarts cost at
+	// most a constant factor.
+	if (mol1 == mol2) return true;
+	for (size_t budget = 8; ; budget *= 4) {
+		int result = boundedSearchAfterFiring(mol2, mol1, budget, excludedBonds, addedBonds);
+		if (result >= 0) return result == 1;
+		result = boundedSearchAfterFiring(mol1, mol2, budget, excludedBonds, addedBonds);
+		if (result >= 0) return result == 1;
 	}
-	
-	// Clear the hasVisitedMolecule values before returning
-	for (list<Molecule *>::iterator it = visited.begin(); it != visited.end(); ++it) {
-		(*it)->setVisitedMolecule(false);
-	}
-
-	// Return whether mol1 is reachable from mol2 when excluding the bond
-	return found;
 }
 
 
