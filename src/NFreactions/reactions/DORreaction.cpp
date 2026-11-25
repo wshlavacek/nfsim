@@ -302,9 +302,16 @@ bool DORRxnClass::tryToAdd(Molecule *m, unsigned int reactantPos) {
 	if (system != 0 && system->isProfilingEnabled())
 		system->recordProfileMatchCandidate();
 
-	// see BasicRxnClass::tryToAdd()
-	if (contextCountsPerComplex[reactantPos] && reactantPos == (unsigned)DORreactantIndex) {
-		reactantTree->noteMappedComplexSize(m->getComplex()->getComplexSize());
+	// see BasicRxnClass::tryToAdd().  Note it on the list of a reactant the
+	// local function does not read as well as on the tree of the one it does:
+	// getCorrectedReactantCount() counts either once per complex only once
+	// its list has noted that matches may share a complex.
+	if (contextCountsPerComplex[reactantPos]) {
+		int complexSize = m->getComplex()->getComplexSize();
+		if (reactantPos == (unsigned)DORreactantIndex)
+			reactantTree->noteMappedComplexSize(complexSize);
+		else
+			reactantLists[reactantPos]->noteMappedComplexSize(complexSize);
 	}
 	if (system != 0 && system->isProfilingEnabled())
 		system->recordProfileMatchCandidate();

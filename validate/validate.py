@@ -1586,6 +1586,34 @@ class TestIssueRegressions(unittest.TestCase):
                 "control at {2:.1f}".format(rateLaw, many, one),
             )
 
+    def test_pure_context_reactant_of_a_local_function_rule_is_counted_once_per_complex(self):
+        # The test above, where the local function reads the substrate and the
+        # homodimer or homotrimer catalyst is a separate reactant the rule never
+        # changes. DORRxnClass::tryToAdd noted that matches may share a complex
+        # only on the tree of the reactant the function reads, so the catalyst's
+        # list was counted once per molecule: DorSub ran at twice its rate and
+        # DorRing at three times. Every pool carries the same rate per substrate,
+        # and BNG's network integrated as ODEs leaves 4000*exp(-0.5) = 2426.1.
+        xmlPath = os.path.join(nfsimPrePath, "test", "context", "dor_context_reactant.xml")
+        headers, mean = self._mean_final_row(xmlPath, "-sim 2000 -oSteps 2", 10)
+        expected = 4000.0 * np.exp(-0.5)
+        for name, description in [
+            ("Basic", "elementary rate, homodimer catalyst (control)"),
+            ("DorSub", "local function on the substrate, homodimer catalyst"),
+            ("DorAsym", "the same with a heterodimer catalyst (control)"),
+            ("DorCat", "local function on the homodimer catalyst (control)"),
+            ("DorRing", "local function on the substrate, homotrimer ring catalyst"),
+        ]:
+            got = mean[headers.index(name)]
+            self.assertAlmostEqual(
+                got,
+                expected,
+                delta=100.0,
+                msg="{0} ({1}) ended at {2:.1f}, expected about {3:.1f}; near 1471 "
+                "means two matching molecules in one catalyst were counted as two, "
+                "near 893 three".format(name, description, got, expected),
+            )
+
     def test_a_transformed_symmetric_pattern_keeps_both_of_its_sites(self):
         # The other direction, and the reason "which reactants are pure context"
         # has to be decided before finalize() appends its placeholder. Bind_sym's

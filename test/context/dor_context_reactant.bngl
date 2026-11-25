@@ -1,0 +1,70 @@
+# A local-function rule whose catalyst is a homodimer the rule never changes,
+# where the local function reads the substrate, not the catalyst. #87/#89 count
+# a reactant the rule does not transform once per complex; on a local-function
+# (DOR) rule that took effect only for the reactant the function reads, so
+# DorSub and DorRing ran twice and three times too fast.
+#
+# Every pool carries the same rate per substrate, k*E0 = 2.5e-4, so BioNetGen's
+# network integrated as ODEs leaves X0*exp(-0.5) = 2426.1 of each at t = 2000.
+#
+#   Basic    elementary rate, homodimer catalyst                 control (#89)
+#   DorSub   local function on the substrate, homodimer catalyst
+#   DorAsym  the same with a heterodimer catalyst                control
+#   DorCat   local function on the homodimer catalyst            control (#89)
+#   DorRing  local function on the substrate, homotrimer ring catalyst
+begin model
+begin parameters
+  k   2.5e-5
+  X0  4000
+  E0  10
+end parameters
+begin molecule types
+  A1(s~0~1)
+  A2(s~0~1)
+  A3(s~0~1)
+  A4(s~0~1)
+  A5(s~0~1)
+  E1(d)
+  E2(d)
+  F3(d)
+  G3(d)
+  E4(d)
+  R5(a,b)
+end molecule types
+begin seed species
+  A1(s~0)  X0
+  A2(s~0)  X0
+  A3(s~0)  X0
+  A4(s~0)  X0
+  A5(s~0)  X0
+  E1(d!1).E1(d!1)  E0
+  E2(d!1).E2(d!1)  E0
+  F3(d!1).G3(d!1)  E0
+  E4(d!1).E4(d!1)  E0
+  R5(a!1,b!3).R5(a!2,b!1).R5(a!3,b!2)  E0
+end seed species
+begin observables
+  Molecules Basic   A1(s~0)
+  Molecules DorSub  A2(s~0)
+  Molecules DorAsym A3(s~0)
+  Molecules DorCat  A4(s~0)
+  Molecules DorRing A5(s~0)
+  Molecules E4t     E4()
+end observables
+begin functions
+  f2(x) = if(DorSub(x) >= 0, k, 0)
+  f3(x) = if(DorAsym(x) >= 0, k, 0)
+  f4(x) = k*E4t(x)/2
+  f5(x) = if(DorRing(x) >= 0, k, 0)
+end functions
+begin reaction rules
+  R_basic:    A1(s~0) + E1(d!1).E1(d!1) -> A1(s~1) + E1(d!1).E1(d!1) k
+  R_dor_sub:  %x:A2(s~0) + E2(d!1).E2(d!1) -> A2(s~1) + E2(d!1).E2(d!1) f2(x)
+  R_dor_asym: %x:A3(s~0) + F3(d!1).G3(d!1) -> A3(s~1) + F3(d!1).G3(d!1) f3(x)
+  R_dor_cat:  A4(s~0) + %x:E4(d!1).E4(d!1) -> A4(s~1) + E4(d!1).E4(d!1) f4(x)
+  R_dor_ring: %x:A5(s~0) + R5(a!1,b!3).R5(a!2,b!1).R5(a!3,b!2) -> A5(s~1) + R5(a!1,b!3).R5(a!2,b!1).R5(a!3,b!2) f5(x)
+end reaction rules
+end model
+begin actions
+  writeXML()
+end actions
